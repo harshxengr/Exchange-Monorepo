@@ -1,0 +1,13 @@
+{
+  "name": "@exchange/types",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@exchange/tsconfig": "workspace:*",
+    "typescript": "^6.0.3"
+  }
+}

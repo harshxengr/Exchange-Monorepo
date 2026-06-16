@@ -1,0 +1,17 @@
+{
+  "name": "@exchange/redis",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "ioredis": "^5.11.1"
+  },
+  "devDependencies": {
+    "@exchange/tsconfig": "workspace:*",
+    "@types/node": "^25.9.3",
+    "typescript": "^6.0.3"
+  }
+}

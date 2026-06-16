@@ -1,0 +1,15 @@
+{
+  "name": "exchange-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test"
+  },
+  "packageManager": "pnpm@10.25.0",
+  "devDependencies": {
+    "turbo": "^2.9.18",
+    "typescript": "^6.0.3"
+  }
+}

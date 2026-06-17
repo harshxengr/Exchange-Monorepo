@@ -1,0 +1,21 @@
+{
+    "name": "@exchange/ws",
+    "version": "1.0.0",
+    "private": true,
+    "main": "dist/index.js",
+    "scripts": {
+        "build": "tsc",
+        "dev": "tsx watch src/index.ts"
+    },
+    "dependencies": {
+        "@exchange/env": "workspace:*",
+        "@exchange/redis": "workspace:*",
+        "@exchange/types": "workspace:*",
+        "ws": "^8.21.0"
+    },
+    "devDependencies": {
+        "@exchange/tsconfig": "workspace:*",
+        "@types/ws": "^8.18.1",
+        "typescript": "^6.0.3"
+    }
+}

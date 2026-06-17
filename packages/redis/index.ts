@@ -1,17 +1,15 @@
 import { Redis } from 'ioredis';
-
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+import { env } from '@exchange/env';
 
 export const createRedisClient = () => {
-  const client = new Redis(REDIS_URL);
-  
+  const client = new Redis(env.REDIS_URL);
+
   client.on('error', (err) => console.error('Redis Client Error', err));
   client.on('connect', () => console.log('Connected to Redis Successfully'));
-  
+
   return client;
 };
 
-// Common queue & channel definitions
 export const REDIS_QUEUES = {
   ORDER_INFLOW: 'exchange:order:inflow'
 };

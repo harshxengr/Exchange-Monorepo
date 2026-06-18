@@ -11,11 +11,13 @@
     "@exchange/env": "workspace:*",
     "@exchange/redis": "workspace:*",
     "@exchange/types": "workspace:*",
+    "cors": "^2.8.6",
     "express": "^5.2.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@exchange/tsconfig": "workspace:*",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.9.3",
     "typescript": "^6.0.3"

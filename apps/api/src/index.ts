@@ -3,8 +3,17 @@ import { z } from 'zod';
 import { createRedisClient, REDIS_QUEUES } from '@exchange/redis';
 import { Order } from '@exchange/types';
 import { env } from '@exchange/env';
+import cors from 'cors';
 
 const app = express();
+
+app.use(cors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
 const redisClient = createRedisClient();

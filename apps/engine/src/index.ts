@@ -5,10 +5,10 @@ import { Order } from '@exchange/types';
 const redisConsumer = createRedisClient();
 const redisPublisher = createRedisClient();
 
-const btcOrderbook = new Orderbook('BTC', 'USD');
+const solOrderbook = new Orderbook('SOL', 'USDC');
 
-btcOrderbook.deposit('user_alice', 'USD', 100000);
-btcOrderbook.deposit('user_bob', 'BTC', 2);
+solOrderbook.deposit('user_alice', 'USDC', 100000);
+solOrderbook.deposit('user_bob', 'SOL', 500);
 
 console.log('Matching Engine Worker Running Core Loop...');
 
@@ -24,7 +24,7 @@ async function startEngineLoop() {
             console.log(`Processing incoming ${order.side} order from ${order.userId}`);
 
             try {
-                const result = btcOrderbook.processOrder(order);
+                const result = solOrderbook.processOrder(order);
 
                 await redisPublisher.publish(
                     REDIS_CHANNELS.ORDER_UPDATES,
@@ -33,7 +33,7 @@ async function startEngineLoop() {
 
                 await redisPublisher.publish(
                     REDIS_CHANNELS.MARKET_DATA,
-                    JSON.stringify({ pair: 'BTC_USD', depth: btcOrderbook.getDepth() })
+                    JSON.stringify({ pair: 'SOL_USDC', depth: solOrderbook.getDepth() })
                 );
 
             } catch (err: any) {

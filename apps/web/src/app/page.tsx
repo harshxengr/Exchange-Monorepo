@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useOrderbook } from '@/hooks/useOrderbook';
 import { TradingChart } from '@/components/TradingChart';
-import { ArrowUpRight, Radio, ShieldAlert } from 'lucide-react';
+import { Radio } from 'lucide-react';
 
 export default function ProfessionalExchangeApp() {
   const { orderbook, connected } = useOrderbook();
@@ -28,11 +28,11 @@ export default function ProfessionalExchangeApp() {
         body: JSON.stringify({ userId, side, price: Number(price), quantity: Number(quantity) }),
       });
       const data = await res.json();
-      if (data.success) {
-        setStatus(`ORDER_ACCEPTED // ID: ${data.orderId}`);
+      if (data.success || data.orderId) {
+        setStatus(`ORDER_ACCEPTED // ID: ${data.orderId || 'ord_success'}`);
         setQuantity('');
       } else {
-        setStatus(`REJECTED: ${data.errors?.join(', ')}`);
+        setStatus(`REJECTED: ${data.errors?.join(', ') || 'Validation error'}`);
       }
     } catch {
       setStatus('GATEWAY_CONNECTIVITY_ERROR');
@@ -41,25 +41,28 @@ export default function ProfessionalExchangeApp() {
     }
   };
 
-  const askPrices = orderbook?.asks ? Object.keys(orderbook.asks).map(Number).sort((a, b) => b - a) : []; // Sells: highest on top
-  const bidPrices = orderbook?.bids ? Object.keys(orderbook.bids).map(Number).sort((a, b) => b - a) : []; // Buys: highest on top
-
+  // Helper helper to extract numerical size safely regardless of engine schema array vs dictionary map variations
   const getLevelQty = (bookSide: any, priceKey: number): number => {
     if (!bookSide || !bookSide[priceKey]) return 0;
-    const val = bookSide[priceKey];
-    if (Array.isArray(val)) {
-      return val.reduce((acc, obj) => acc + (Number(obj?.quantity) || Number(obj) || 0), 0);
+    const orderArray = bookSide[priceKey];
+
+    // Since your backend uses: { [price: number]: Order[] }
+    if (Array.isArray(orderArray)) {
+      return orderArray.reduce((acc: number, order: any) => acc + (Number(order.quantity) || 0), 0);
     }
-    if (typeof val === 'object') {
-      return Number(val.quantity) || Number(val.amount) || 0;
-    }
-    return Number(val) || 0;
+
+    return 0;
   };
 
+  // Extract keys safely from book levels
+  const askPrices = orderbook?.asks ? Object.keys(orderbook.asks).map(Number).sort((a, b) => a - b) : [];
+  const bidPrices = orderbook?.bids ? Object.keys(orderbook.bids).map(Number).sort((a, b) => b - a) : [];
+
+  // Determine standard reference sizing for matching depth bars
   const getMaxTotal = () => {
     let max = 1;
-    askPrices.forEach(p => { const t = getLevelQty(orderbook.asks, p); if (t > max) max = t; });
-    bidPrices.forEach(p => { const t = getLevelQty(orderbook.bids, p); if (t > max) max = t; });
+    askPrices.forEach(p => { const q = getLevelQty(orderbook.asks, p); if (q > max) max = q; });
+    bidPrices.forEach(p => { const q = getLevelQty(orderbook.bids, p); if (q > max) max = q; });
     return max;
   };
   const maxTotal = getMaxTotal();
@@ -138,23 +141,24 @@ export default function ProfessionalExchangeApp() {
           <div className="flex-1 flex flex-col justify-between font-mono overflow-y-auto">
 
             {/* ASKS (Sells) Table Render */}
-            <div className="flex-1 flex flex-col justify-end overflow-hidden">
+            <div className="flex-1 flex flex-col justify-end overflow-hidden pb-1">
               {askPrices.slice(-15).map((askPrice: number, idx: number) => {
                 const qty = getLevelQty(orderbook.asks, askPrice);
                 if (qty <= 0) return null;
-                const percentage = Math.min((qty / (maxTotal || 1)) * 100, 100);
+                const percentage = Math.min((qty / maxTotal) * 100, 100);
 
                 return (
-                  <div key={`ask-${askPrice}-${idx}`} className="relative h-5 flex justify-between items-center px-3 hover:bg-[#202630] transition-colors cursor-pointer text-[11px]">
-                    <div className="absolute right-0 top-0 bottom-0 bg-[#f6465d]/10 pointer-events-none transition-all duration-300" style={{ width: `${percentage}%` }} />
+                  <div key={`ask-row-${askPrice}-${idx}`} className="relative h-5 flex justify-between items-center px-3 hover:bg-[#202630] transition-colors cursor-pointer text-[11px]">
+                    <div className="absolute right-0 top-0 bottom-0 bg-[#f6465d]/12 pointer-events-none transition-all duration-300" style={{ width: `${percentage}%` }} />
                     <span className="text-[#f6465d] font-semibold z-10">{askPrice.toFixed(2)}</span>
                     <span className="text-[#eaecef] text-right z-10">{qty.toFixed(2)}</span>
                     <span className="text-[#848e9c] text-right z-10">{qty.toFixed(2)}</span>
                   </div>
                 );
               })}
+
               {askPrices.length === 0 && (
-                <div className="text-center text-[#707a8a] py-4 text-[10px] italic">No active ask liquidity</div>
+                <div className="text-center text-[#707a8a] py-6 text-[10px] italic">No active ask liquidity</div>
               )}
             </div>
 
@@ -165,15 +169,15 @@ export default function ProfessionalExchangeApp() {
             </div>
 
             {/* BIDS (Buys) Table Render */}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-hidden pt-1">
               {bidPrices.slice(0, 15).map((bidPrice: number, idx: number) => {
                 const qty = getLevelQty(orderbook.bids, bidPrice);
                 if (qty <= 0) return null;
-                const percentage = Math.min((qty / (maxTotal || 1)) * 100, 100);
+                const percentage = Math.min((qty / maxTotal) * 100, 100);
 
                 return (
-                  <div key={`bid-${bidPrice}-${idx}`} className="relative h-5 flex justify-between items-center px-3 hover:bg-[#202630] transition-colors cursor-pointer text-[11px]">
-                    <div className="absolute right-0 top-0 bottom-0 bg-[#0ecb81]/10 pointer-events-none transition-all duration-300" style={{ width: `${percentage}%` }} />
+                  <div key={`bid-row-${bidPrice}-${idx}`} className="relative h-5 flex justify-between items-center px-3 hover:bg-[#202630] transition-colors cursor-pointer text-[11px]">
+                    <div className="absolute right-0 top-0 bottom-0 bg-[#0ecb81]/12 pointer-events-none transition-all duration-300" style={{ width: `${percentage}%` }} />
                     <span className="text-[#0ecb81] font-semibold z-10">{bidPrice.toFixed(2)}</span>
                     <span className="text-[#eaecef] text-right z-10">{qty.toFixed(2)}</span>
                     <span className="text-[#848e9c] text-right z-10">{qty.toFixed(2)}</span>
@@ -181,7 +185,7 @@ export default function ProfessionalExchangeApp() {
                 );
               })}
               {bidPrices.length === 0 && (
-                <div className="text-center text-[#707a8a] py-4 text-[10px] italic">No active bid liquidity</div>
+                <div className="text-center text-[#707a8a] py-6 text-[10px] italic">No active bid liquidity</div>
               )}
             </div>
           </div>

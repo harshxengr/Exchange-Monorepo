@@ -1,10 +1,24 @@
-import dotenv from 'dotenv';
-import path from 'path';
+import fs from "fs";
+import path from "path";
+import dotenv from "dotenv";
 import { z } from 'zod';
 
-const rootEnvPath = path.resolve(__dirname, '../../../.env');
+function loadRootEnv() {
+  const candidates = [
+    path.resolve(process.cwd(), '.env'),
+    path.resolve(process.cwd(), '../../.env'),
+    path.resolve(__dirname, '../../../.env'),
+  ];
 
-dotenv.config({ path: rootEnvPath });
+  for (const envPath of candidates) {
+    if (fs.existsSync(envPath)) {
+      dotenv.config({ path: envPath });
+      return;
+    }
+  }
+}
+
+loadRootEnv();
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -12,6 +26,8 @@ const EnvSchema = z.object({
   WS_PORT: z.string().default('8080'),
   REDIS_URL: z.string().url().default('redis://localhost:6379'),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required for PostgreSQL access"),
+  NEXTAUTH_SECRET: z.string().optional(),
+  NEXTAUTH_URL: z.string().url().optional(),
 })
 
 const parsedEnv = EnvSchema.safeParse(process.env);

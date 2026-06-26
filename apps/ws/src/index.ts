@@ -6,6 +6,15 @@ const PORT = Number(env.WS_PORT) || 8080;
 
 const wss = new WebSocketServer({ port: PORT });
 
+wss.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`WebSocket port ${PORT} is already in use. Stop the other process or set WS_PORT.`);
+    } else {
+        console.error('WebSocket server error:', err);
+    }
+    process.exit(1);
+});
+
 const connectedClients = new Set<WebSocket>();
 
 wss.on('connection', (ws: WebSocket) => {

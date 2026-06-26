@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@exchange/redis": "workspace:*",
-    "@exchange/types": "workspace:*"
+    "@exchange/types": "workspace:*",
+    "@exchange/db": "workspace:*"
   },
   "devDependencies": {
     "@exchange/tsconfig": "workspace:*",

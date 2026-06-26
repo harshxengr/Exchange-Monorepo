@@ -5,6 +5,18 @@ export interface Order {
     side: 'BUY' | 'SELL';
     userId: string;
     timestamp: number;
+    orderType?: 'LIMIT' | 'MARKET';
+    postOnly?: boolean;
+    ioc?: boolean;
+}
+
+export interface AccountInitialization {
+    type: 'ACCOUNT_INIT';
+    userId: string;
+    balances: {
+        asset: string;
+        amount: number;
+    }[];
 }
 
 export interface OrderbookSide {

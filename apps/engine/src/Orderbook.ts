@@ -1,8 +1,14 @@
-import { Order, Orderbook as IOrderbook, Balances } from '@exchange/types';
+import { Order, Balances } from '@exchange/types';
+
+export interface ExecutionOrder extends Order {
+    orderType?: 'LIMIT' | 'MARKET';
+    postOnly?: boolean;
+    ioc?: boolean;
+}
 
 export class Orderbook {
-    private bids: { [price: number]: Order[] } = {};
-    private asks: { [price: number]: Order[] } = {};
+    private bids: { [price: number]: ExecutionOrder[] } = {};
+    private asks: { [price: number]: ExecutionOrder[] } = {};
     private balances: Balances = {};
     private baseAsset: string;
     private quoteAsset: string;
@@ -25,30 +31,61 @@ export class Orderbook {
         balance.available += amount;
     }
 
-    public processOrder(order: Order) {
-        const { side, price, quantity, userId } = order;
+    public processOrder(order: ExecutionOrder) {
+        const { side, price, quantity, userId, orderType = 'LIMIT', postOnly = false, ioc = false } = order;
 
-        if (side === 'BUY') {
-            const cost = price * quantity;
-            const usdBalance = this.getBalance(userId, this.quoteAsset);
-            if (usdBalance.available < cost) throw new Error('Insufficient USD balance');
-            usdBalance.available -= cost;
-            usdBalance.locked += cost;
+        // 1. Pre-Execution Balance Locking Checks
+        if (orderType === 'LIMIT') {
+            if (side === 'BUY') {
+                const cost = price * quantity;
+                const usdBalance = this.getBalance(userId, this.quoteAsset);
+                if (usdBalance.available < cost) throw new Error('Insufficient USD balance');
+                usdBalance.available -= cost;
+                usdBalance.locked += cost;
+            } else {
+                const cryptoBalance = this.getBalance(userId, this.baseAsset);
+                if (cryptoBalance.available < quantity) throw new Error('Insufficient crypto balance');
+                cryptoBalance.available -= quantity;
+                cryptoBalance.locked += quantity;
+            }
         } else {
-            const btcBalance = this.getBalance(userId, this.baseAsset);
-            if (btcBalance.available < quantity) throw new Error('Insufficient crypto balance');
-            btcBalance.available -= quantity;
-            btcBalance.locked += quantity;
+            // MARKET validation check matching profile liquid baseline directly
+            if (side === 'SELL') {
+                const cryptoBalance = this.getBalance(userId, this.baseAsset);
+                if (cryptoBalance.available < quantity) throw new Error('Insufficient crypto balance for market execution');
+                cryptoBalance.available -= quantity;
+            }
+        }
+
+        // 2. Check Post-Only condition before match loops run
+        if (postOnly && orderType === 'LIMIT') {
+            const hasMatchingAsks = side === 'BUY' && Object.keys(this.asks).map(Number).some(p => p <= price);
+            const hasMatchingBids = side === 'SELL' && Object.keys(this.bids).map(Number).some(p => p >= price);
+            if (hasMatchingAsks || hasMatchingBids) {
+                // Post-only orders must add liquidity, so cancel immediately if it would cross a resting order
+                if (side === 'BUY') {
+                    const usdBalance = this.getBalance(userId, this.quoteAsset);
+                    usdBalance.available += (price * quantity);
+                    usdBalance.locked -= (price * quantity);
+                } else {
+                    const cryptoBalance = this.getBalance(userId, this.baseAsset);
+                    cryptoBalance.available += quantity;
+                    cryptoBalance.locked -= quantity;
+                }
+                throw new Error('POST_ONLY_RESTRICTION_TRIGGERED');
+            }
         }
 
         const trades: any[] = [];
         let remainingQty = quantity;
 
+        // 3. Execution Processing Core Match Loop
         if (side === 'BUY') {
             const askPrices = Object.keys(this.asks).map(Number).sort((a, b) => a - b);
 
             for (const askPrice of askPrices) {
-                if (askPrice > price || remainingQty <= 0) break;
+                if (orderType === 'LIMIT' && askPrice > price) break;
+                if (remainingQty <= 0) break;
 
                 const orderLine = this.asks[askPrice];
                 while (orderLine.length > 0 && remainingQty > 0) {
@@ -58,7 +95,20 @@ export class Orderbook {
                     remainingQty -= matchQty;
                     activeAsk.quantity -= matchQty;
 
-                    this.settleTrade(userId, activeAsk.userId, askPrice, matchQty);
+                    // Settle asset distribution balances internally
+                    if (orderType === 'MARKET') {
+                        const totalCost = askPrice * matchQty;
+                        const buyerUSD = this.getBalance(userId, this.quoteAsset);
+                        if (buyerUSD.available < totalCost) throw new Error('Insufficient USD to continue market fill');
+                        buyerUSD.available -= totalCost;
+                        this.getBalance(userId, this.baseAsset).available += matchQty;
+
+                        const sellerCrypto = this.getBalance(activeAsk.userId, this.baseAsset);
+                        sellerCrypto.locked -= matchQty;
+                        this.getBalance(activeAsk.userId, this.quoteAsset).available += totalCost;
+                    } else {
+                        this.settleTrade(userId, activeAsk.userId, askPrice, matchQty);
+                    }
 
                     trades.push({
                         buyer: userId,
@@ -68,24 +118,31 @@ export class Orderbook {
                         timestamp: Date.now()
                     });
 
-                    if (activeAsk.quantity === 0) {
-                        orderLine.shift();
-                    }
+                    if (activeAsk.quantity === 0) orderLine.shift();
                 }
                 if (orderLine.length === 0) delete this.asks[askPrice];
             }
 
-            if (remainingQty > 0) {
+            // Book resting balance tracking parameters if limit order type wasn't canceled via IOC rules
+            if (remainingQty > 0 && orderType === 'LIMIT' && !ioc) {
                 order.quantity = remainingQty;
                 if (!this.bids[price]) this.bids[price] = [];
                 this.bids[price].push(order);
+            } else if (remainingQty > 0 && orderType === 'LIMIT' && ioc) {
+                // Return unused locked funds if immediate or cancel failed to fill completely
+                const unusedCost = price * remainingQty;
+                const usdBalance = this.getBalance(userId, this.quoteAsset);
+                usdBalance.available += unusedCost;
+                usdBalance.locked -= unusedCost;
             }
 
         } else {
+            // SELL SIDE EXECUTION LOGIC MATRIX
             const bidPrices = Object.keys(this.bids).map(Number).sort((a, b) => b - a);
 
             for (const bidPrice of bidPrices) {
-                if (bidPrice < price || remainingQty <= 0) break;
+                if (orderType === 'LIMIT' && bidPrice < price) break;
+                if (remainingQty <= 0) break;
 
                 const orderLine = this.bids[bidPrice];
                 while (orderLine.length > 0 && remainingQty > 0) {
@@ -95,7 +152,16 @@ export class Orderbook {
                     remainingQty -= matchQty;
                     activeBid.quantity -= matchQty;
 
-                    this.settleTrade(activeBid.userId, userId, bidPrice, matchQty);
+                    if (orderType === 'MARKET') {
+                        const totalCost = bidPrice * matchQty;
+                        this.getBalance(userId, this.quoteAsset).available += totalCost;
+
+                        const buyerUSD = this.getBalance(activeBid.userId, this.quoteAsset);
+                        buyerUSD.locked -= totalCost;
+                        this.getBalance(activeBid.userId, this.baseAsset).available += matchQty;
+                    } else {
+                        this.settleTrade(activeBid.userId, userId, bidPrice, matchQty);
+                    }
 
                     trades.push({
                         buyer: activeBid.userId,
@@ -105,36 +171,31 @@ export class Orderbook {
                         timestamp: Date.now()
                     });
 
-                    if (activeBid.quantity === 0) {
-                        orderLine.shift();
-                    }
+                    if (activeBid.quantity === 0) orderLine.shift();
                 }
                 if (orderLine.length === 0) delete this.bids[bidPrice];
             }
 
-            if (remainingQty > 0) {
+            if (remainingQty > 0 && orderType === 'LIMIT' && !ioc) {
                 order.quantity = remainingQty;
                 if (!this.asks[price]) this.asks[price] = [];
                 this.asks[price].push(order);
+            } else if (remainingQty > 0 && orderType === 'LIMIT' && ioc) {
+                const cryptoBalance = this.getBalance(userId, this.baseAsset);
+                cryptoBalance.available += remainingQty;
+                cryptoBalance.locked -= remainingQty;
             }
         }
 
-        return { trades, remainingQty };
+        return { trades, remainingQty, filledQty: quantity - remainingQty };
     }
 
     private settleTrade(buyerId: string, sellerId: string, price: number, quantity: number) {
         const totalCost = price * quantity;
-
-        const buyerUSD = this.getBalance(buyerId, this.quoteAsset);
-        const buyerBTC = this.getBalance(buyerId, this.baseAsset);
-        const sellerUSD = this.getBalance(sellerId, this.quoteAsset);
-        const sellerBTC = this.getBalance(sellerId, this.baseAsset);
-
-        buyerUSD.locked -= totalCost;
-        buyerBTC.available += quantity;
-
-        sellerBTC.locked -= quantity;
-        sellerUSD.available += totalCost;
+        this.getBalance(buyerId, this.quoteAsset).locked -= totalCost;
+        this.getBalance(buyerId, this.baseAsset).available += quantity;
+        this.getBalance(sellerId, this.baseAsset).locked -= quantity;
+        this.getBalance(sellerId, this.quoteAsset).available += totalCost;
     }
 
     public getDepth() {

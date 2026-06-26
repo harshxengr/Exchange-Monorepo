@@ -11,7 +11,8 @@ export const createRedisClient = () => {
 };
 
 export const REDIS_QUEUES = {
-  ORDER_INFLOW: 'exchange:order:inflow'
+  ORDER_INFLOW: 'exchange:order:inflow',
+  ACCOUNT_INIT: 'exchange:account:init'
 };
 
 export const REDIS_CHANNELS = {

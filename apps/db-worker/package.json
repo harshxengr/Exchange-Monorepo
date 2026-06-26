@@ -4,22 +4,17 @@
     "private": true,
     "main": "dist/index.js",
     "scripts": {
-        "build": "prisma generate && tsc",
-        "dev": "prisma generate && tsx watch src/index.ts",
-        "db:generate": "prisma generate",
-        "db:migrate": "prisma migrate dev"
+        "build": "tsc",
+        "dev": "tsx watch src/index.ts"
     },
     "dependencies": {
+        "@exchange/db": "workspace:*",
         "@exchange/env": "workspace:*",
         "@exchange/redis": "workspace:*",
-        "@exchange/types": "workspace:*",
-        "@prisma/adapter-pg": "^7.8.0",
-        "@prisma/client": "^7.8.0",
-        "pg": "^8.21.0"
+        "@exchange/types": "workspace:*"
     },
     "devDependencies": {
         "@exchange/tsconfig": "workspace:*",
-        "prisma": "^7.8.0",
         "typescript": "^6.0.3"
     }
 }

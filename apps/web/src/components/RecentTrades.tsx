@@ -1,3 +1,5 @@
+import { LiveTrade } from "@/hooks/useOrderbook";
+
 interface TradeHistoryItem {
     price: number;
     quantity: number;
@@ -6,10 +8,18 @@ interface TradeHistoryItem {
 }
 
 interface RecentTradesProps {
-    tradesHistory: TradeHistoryItem[];
+    trades: LiveTrade[];
+    currentUserId?: string;
 }
 
-export function RecentTrades({ tradesHistory }: RecentTradesProps) {
+export function RecentTrades({ trades, currentUserId }: RecentTradesProps) {
+    const tradesHistory: TradeHistoryItem[] = trades.slice(0, 30).map((trade) => ({
+        price: trade.price,
+        quantity: trade.quantity,
+        side: trade.buyer === currentUserId ? 'BUY' : 'SELL',
+        timestamp: new Date(trade.timestamp).toLocaleTimeString(),
+    }));
+
     return (
         <div className="flex-1 flex flex-col bg-[#0b0e11] overflow-hidden">
             <div className="text-[10px] uppercase font-bold text-[#707a8a] px-4 py-2.5 border-b border-[#1f2630] tracking-wider bg-[#12161a]">

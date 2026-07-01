@@ -1,18 +1,63 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { createChart, ColorType, CandlestickSeries } from 'lightweight-charts';
+import { useEffect, useMemo, useRef } from 'react';
+import { createChart, ColorType, CandlestickSeries, UTCTimestamp } from 'lightweight-charts';
+import { LiveTrade } from '@/hooks/useOrderbook';
 
-export function TradingChart() {
+interface TradingChartProps {
+  trades: LiveTrade[];
+}
+
+interface Candle {
+  time: UTCTimestamp;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+function buildCandlesFromTrades(trades: LiveTrade[]) {
+  const candles = new Map<number, Candle>();
+  const sortedTrades = trades
+    .filter((trade) => Number.isFinite(trade.price) && Number.isFinite(trade.timestamp))
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  for (const trade of sortedTrades) {
+    const price = Number(trade.price);
+    const bucketTime = Math.floor(trade.timestamp / 60000) * 60;
+    const existing = candles.get(bucketTime);
+
+    if (!existing) {
+      candles.set(bucketTime, {
+        time: bucketTime as UTCTimestamp,
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+      });
+      continue;
+    }
+
+    existing.high = Math.max(existing.high, price);
+    existing.low = Math.min(existing.low, price);
+    existing.close = price;
+  }
+
+  return Array.from(candles.values()).sort((a, b) => Number(a.time) - Number(b.time));
+}
+
+export function TradingChart({ trades }: TradingChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
+  const seriesRef = useRef<ReturnType<ReturnType<typeof createChart>['addSeries']> | null>(null);
+  const candles = useMemo(() => buildCandlesFromTrades(trades), [trades]);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    // 1. Initialize core chart context
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#111722' }, // Matching your dark UI mock
+        background: { type: ColorType.Solid, color: '#111722' },
         textColor: '#707a8a',
       },
       grid: {
@@ -24,46 +69,56 @@ export function TradingChart() {
       timeScale: { 
         borderColor: '#1e2430',
         timeVisible: true,
-        secondsVisible: false,
+        secondsVisible: true,
       },
     });
 
-    // 2. Fix the error: Use the new V5 addSeries factory system
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#0ecb81',     // Exchange green
-      downColor: '#f6465d',   // Exchange red
+      upColor: '#0ecb81',
+      downColor: '#f6465d',
       borderVisible: false,
       wickUpColor: '#0ecb81',
       wickDownColor: '#f6465d',
     });
 
-    // 3. Set data
-    const mockData = [
-      { time: '2026-06-11', open: 132.50, high: 135.20, low: 131.00, close: 134.10 },
-      { time: '2026-06-12', open: 134.10, high: 136.80, low: 133.00, close: 136.60 },
-      { time: '2026-06-13', open: 136.60, high: 137.40, low: 132.50, close: 133.10 },
-      { time: '2026-06-14', open: 133.10, high: 135.90, low: 131.20, close: 134.70 },
-      { time: '2026-06-15', open: 134.70, high: 136.00, low: 132.10, close: 133.90 },
-      { time: '2026-06-16', open: 133.90, high: 135.50, low: 132.80, close: 134.64 },
-    ];
-    candlestickSeries.setData(mockData);
+    seriesRef.current = candlestickSeries;
+    chartRef.current = chart;
+    candlestickSeries.setData([]);
+    chart.timeScale().fitContent();
 
     const handleResize = () => {
       if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+        chart.applyOptions({
+          width: chartContainerRef.current.clientWidth,
+          height: chartContainerRef.current.clientHeight || 400,
+        });
       }
     };
     window.addEventListener('resize', handleResize);
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      chartRef.current = null;
+      seriesRef.current = null;
       chart.remove();
     };
   }, []);
 
+  useEffect(() => {
+    seriesRef.current?.setData(candles);
+    if (candles.length > 0) {
+      chartRef.current?.timeScale().fitContent();
+    }
+  }, [candles]);
+
   return (
-    <div className="w-full h-full bg-[#111722] rounded-lg overflow-hidden border border-[#1e2430]">
-      <div ref={chartContainerRef} className="w-full" />
+    <div className="relative w-full h-full bg-[#111722] rounded-lg overflow-hidden border border-[#1e2430]">
+      <div ref={chartContainerRef} className="w-full h-full" />
+      {candles.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center text-[11px] font-mono text-[#707a8a] pointer-events-none">
+          Waiting for executed trades...
+        </div>
+      )}
     </div>
   );
 }

@@ -22,6 +22,12 @@ export function OrderBook({ orderbook }: OrderBookProps) {
 
     const askPrices = orderbook?.asks ? Object.keys(orderbook.asks).map(Number).sort((a, b) => b - a) : [];
     const bidPrices = orderbook?.bids ? Object.keys(orderbook.bids).map(Number).sort((a, b) => b - a) : [];
+    const bestAsk = askPrices.length > 0 ? Math.min(...askPrices) : undefined;
+    const bestBid = bidPrices.length > 0 ? Math.max(...bidPrices) : undefined;
+    const midMarketPrice =
+        bestBid !== undefined && bestAsk !== undefined
+            ? (bestBid + bestAsk) / 2
+            : bestBid ?? bestAsk;
 
     const getMaxTotal = () => {
         let max = 1;
@@ -59,7 +65,9 @@ export function OrderBook({ orderbook }: OrderBookProps) {
                 </div>
 
                 <div className="bg-[#1e2329] border-y border-[#1f2630] py-1.5 px-3 flex justify-between items-center">
-                    <span className="text-xs font-bold text-[#0ecb81]">$134.64</span>
+                    <span className="text-xs font-bold text-[#0ecb81]">
+                        {midMarketPrice !== undefined ? `$${midMarketPrice.toFixed(2)}` : '--'}
+                    </span>
                     <span className="text-[9px] text-[#707a8a]">Mid Market Price</span>
                 </div>
 

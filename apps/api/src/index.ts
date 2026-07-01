@@ -19,13 +19,37 @@ app.use(express.json());
 const redisClient = createRedisClient();
 
 const OrderSchema = z.object({
-    price: z.number().nonnegative('Price must be zero or greater'),
-    quantity: z.number().positive('Quantity must be greater than zero'),
+    price: z.number().finite('Price must be a finite number').nonnegative('Price must be zero or greater'),
+    quantity: z.number().finite('Quantity must be a finite number').positive('Quantity must be greater than zero'),
     side: z.enum(['BUY', 'SELL']),
     userId: z.string().min(1, 'User ID is required'),
     orderType: z.enum(['LIMIT', 'MARKET']).default('LIMIT'),
     postOnly: z.boolean().default(false),
     ioc: z.boolean().default(false),
+}).superRefine((order, ctx) => {
+    if (order.orderType === 'LIMIT' && order.price <= 0) {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['price'],
+            message: 'Limit orders require a price greater than zero',
+        });
+    }
+
+    if (order.orderType === 'MARKET' && (order.postOnly || order.ioc)) {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['orderType'],
+            message: 'Market orders do not support post-only or IOC flags',
+        });
+    }
+
+    if (order.postOnly && order.ioc) {
+        ctx.addIssue({
+            code: 'custom',
+            path: ['postOnly'],
+            message: 'Post-only and IOC cannot be enabled together',
+        });
+    }
 });
 
 app.post('/api/v1/order', async (req, res) => {
@@ -41,16 +65,9 @@ app.post('/api/v1/order', async (req, res) => {
 
         const { price, quantity, side, userId, orderType, postOnly, ioc } = validationResult.data;
 
-        if (orderType === 'LIMIT' && price <= 0) {
-            return res.status(400).json({
-                success: false,
-                errors: ['Limit orders require a price greater than zero'],
-            });
-        }
-
         const systemGeneratedOrder = {
             id: `ord_${Math.random().toString(36).substring(2, 11)}`,
-            price,
+            price: orderType === 'MARKET' ? 0 : price,
             quantity,
             side,
             userId,

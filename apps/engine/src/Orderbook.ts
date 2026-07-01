@@ -34,6 +34,26 @@ export class Orderbook {
     public processOrder(order: ExecutionOrder) {
         const { side, price, quantity, userId, orderType = 'LIMIT', postOnly = false, ioc = false } = order;
 
+        if (postOnly && ioc) {
+            throw new Error('Post-only and IOC cannot be enabled together');
+        }
+
+        if (orderType === 'MARKET' && (postOnly || ioc)) {
+            throw new Error('Market orders do not support post-only or IOC flags');
+        }
+
+        if (orderType === 'LIMIT' && price <= 0) {
+            throw new Error('Limit orders require a price greater than zero');
+        }
+
+        if (orderType === 'MARKET' && side === 'BUY') {
+            const maxExecutableCost = this.getMarketBuyCost(quantity);
+            const usdBalance = this.getBalance(userId, this.quoteAsset);
+            if (maxExecutableCost > usdBalance.available) {
+                throw new Error('Insufficient USD balance for market execution');
+            }
+        }
+
         // 1. Pre-Execution Balance Locking Checks
         if (orderType === 'LIMIT') {
             if (side === 'BUY') {
@@ -108,6 +128,12 @@ export class Orderbook {
                         this.getBalance(activeAsk.userId, this.quoteAsset).available += totalCost;
                     } else {
                         this.settleTrade(userId, activeAsk.userId, askPrice, matchQty);
+                        if (price > askPrice) {
+                            const priceImprovement = (price - askPrice) * matchQty;
+                            const buyerUSD = this.getBalance(userId, this.quoteAsset);
+                            buyerUSD.locked -= priceImprovement;
+                            buyerUSD.available += priceImprovement;
+                        }
                     }
 
                     trades.push({
@@ -185,9 +211,34 @@ export class Orderbook {
                 cryptoBalance.available += remainingQty;
                 cryptoBalance.locked -= remainingQty;
             }
+
+            if (remainingQty > 0 && orderType === 'MARKET') {
+                const cryptoBalance = this.getBalance(userId, this.baseAsset);
+                cryptoBalance.available += remainingQty;
+            }
         }
 
         return { trades, remainingQty, filledQty: quantity - remainingQty };
+    }
+
+    private getMarketBuyCost(quantity: number) {
+        let remainingQty = quantity;
+        let totalCost = 0;
+        const askPrices = Object.keys(this.asks).map(Number).sort((a, b) => a - b);
+
+        for (const askPrice of askPrices) {
+            if (remainingQty <= 0) break;
+
+            const orderLine = this.asks[askPrice];
+            for (const ask of orderLine) {
+                if (remainingQty <= 0) break;
+                const matchQty = Math.min(remainingQty, ask.quantity);
+                totalCost += askPrice * matchQty;
+                remainingQty -= matchQty;
+            }
+        }
+
+        return totalCost;
     }
 
     private settleTrade(buyerId: string, sellerId: string, price: number, quantity: number) {
